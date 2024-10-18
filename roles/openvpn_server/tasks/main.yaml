@@ -1,0 +1,282 @@
+---
+- name: Update repository cache
+  package:
+    update_cache: yes
+  when: ansible_os_family in [ 'Debian', 'RedHat', 'Fedora', 'Rocky' ]
+
+- name: Install OpenVPN, easy-rsa, and necessary packages
+  package:
+    name:
+      - openvpn
+      - easy-rsa
+      - "{{ firewall_package_name }}"
+    state: present
+  when: ansible_os_family in ['RedHat', 'Fedora', 'Rocky']
+
+- name: Install UFW on Debian-based systems
+  apt:
+    name: ufw
+    state: present
+  when: ansible_os_family == 'Debian'
+
+- name: Install Firewalld on RedHat-based systems
+  yum:
+    name: firewalld
+    state: present
+  when: ansible_os_family in ['RedHat', 'Fedora', 'Rocky']
+
+- name: Enable and start firewall service (UFW for Debian, firewalld for RedHat)
+  service:
+    name: "{{ 'ufw' if ansible_os_family == 'Debian' else 'firewalld' }}"
+    state: started
+    enabled: true
+
+- name: Check if OpenVPN directory is already exists
+  stat:
+    path: "{{ openvpn_ca_dir }}"
+  register: dir_check
+
+- name: Create OpenVPN directory
+  shell: |
+    make-cadir "{{ openvpn_ca_dir }}"
+  when: not dir_check.stat.exists and ansible_os_family in [ 'Debian' ]
+
+- name: Create OpenVPN directory
+  shell: |
+    mkdir "{{ openvpn_ca_dir }}"
+    ln -s /usr/share/easy-rsa/3/* "{{ openvpn_ca_dir }}"
+    chmod 700 "{{ openvpn_ca_dir }}"
+  when: not dir_check.stat.exists and ansible_os_family in ['RedHat', 'Fedora', 'Rocky']
+
+- name: Copy vars file template
+  template:
+    src: vars.j2
+    dest: "{{ openvpn_ca_dir }}/vars"
+    mode: '0644'
+
+- name: Check if PKI directory exists
+  stat:
+    path: "{{ openvpn_ca_dir }}/pki"
+  register: pki_dir_check
+
+- name: Set fact to track if PKI is initialized (based on directory existence)
+  set_fact:
+    openvpn_pki_initialized: "{{ pki_dir_check.stat.exists and pki_dir_check.stat.isdir }}"
+
+- name: Initialize the PKI (if not already initialized)
+  command: "./easyrsa init-pki"
+  args:
+    chdir: "{{ openvpn_ca_dir }}"
+  when: not openvpn_pki_initialized
+
+# Check if CA is built
+- name: Check if CA is already built
+  stat:
+    path: "{{ openvpn_ca_dir }}/pki/ca.crt"
+  register: ca_built_check
+
+- name: Set fact to track if CA is built
+  set_fact:
+    openvpn_ca_built: "{{ ca_built_check.stat.exists }}"
+
+- name: Build the CA non-interactively using environment variables
+  command: "./easyrsa build-ca nopass"
+  args:
+    chdir: "{{ openvpn_ca_dir }}"
+    creates: "{{ openvpn_ca_dir }}/pki/ca.crt"
+  environment:
+    EASYRSA_BATCH: "1"
+    EASYRSA_REQ_CN: "EasyRSA-CA"
+  when: not openvpn_ca_built
+
+# Check if server certificate request is generated
+- name: Check if server certificate request is generated
+  stat:
+    path: "{{ openvpn_ca_dir }}/pki/private/server.key"
+  register: server_key_check
+
+- name: Set fact to track if server key is generated
+  set_fact:
+    openvpn_server_key_generated: "{{ server_key_check.stat.exists }}"
+
+- name: Generate server certificate request non-interactively
+  command: "./easyrsa gen-req server nopass"
+  args:
+    chdir: "{{ openvpn_ca_dir }}"
+  environment:
+    EASYRSA_BATCH: "1"
+    EASYRSA_REQ_CN: "server"
+  when: not openvpn_server_key_generated
+
+# Check if server certificate is signed
+- name: Check if server certificate is signed
+  stat:
+    path: "{{ openvpn_ca_dir }}/pki/issued/server.crt"
+  register: server_cert_check
+
+- name: Set fact to track if server certificate is signed
+  set_fact:
+    openvpn_server_cert_signed: "{{ server_cert_check.stat.exists }}"
+
+- name: Sign server certificate non-interactively
+  command: "./easyrsa sign-req server server"
+  args:
+    chdir: "{{ openvpn_ca_dir }}"
+  environment:
+    EASYRSA_BATCH: "1"
+  when: not openvpn_server_cert_signed
+
+# Check if Diffie-Hellman parameters are generated
+- name: Check if Diffie-Hellman parameters are generated
+  stat:
+    path: "{{ openvpn_ca_dir }}/pki/dh.pem"
+  register: dh_generated_check
+
+- name: Set fact to track if Diffie-Hellman parameters are generated
+  set_fact:
+    openvpn_dh_generated: "{{ dh_generated_check.stat.exists }}"
+
+- name: Generate Diffie-Hellman parameters
+  command: "./easyrsa gen-dh"
+  args:
+    chdir: "{{ openvpn_ca_dir }}"
+  when: not openvpn_dh_generated
+
+# Check if tls-auth key is generated
+- name: Check if tls-auth key is generated
+  stat:
+    path: "{{ openvpn_ca_dir }}/pki/ta.key"
+  register: tls_key_check
+
+- name: Set fact to track if tls-auth key is generated
+  set_fact:
+    openvpn_tls_key_generated: "{{ tls_key_check.stat.exists }}"
+
+- name: Generate tls-auth key
+  command: "openvpn --genkey --secret pki/ta.key"
+  args:
+    chdir: "{{ openvpn_ca_dir }}"
+  when: not openvpn_tls_key_generated
+
+- name: Copy necessary keys and certificates to OpenVPN directory on Debian-based systems
+  copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    remote_src: yes
+    owner: root
+    group: root
+    mode: '0600'
+  loop:
+    - { src: "{{ openvpn_ca_dir }}/pki/dh.pem", dest: "/etc/openvpn/dh.pem" }
+    - { src: "{{ openvpn_ca_dir }}/pki/ca.crt", dest: "/etc/openvpn/ca.crt" }
+    - { src: "{{ openvpn_ca_dir }}/pki/ta.key", dest: "/etc/openvpn/ta.key" }
+    - { src: "{{ openvpn_ca_dir }}/pki/issued/server.crt", dest: "/etc/openvpn/server.crt" }
+    - { src: "{{ openvpn_ca_dir }}/pki/private/server.key", dest: "/etc/openvpn/server.key" }
+  when: ansible_os_family in ['Debian']
+
+- name: Copy necessary keys and certificates to OpenVPN directory on RedHat-based systems
+  copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    remote_src: yes
+    owner: root
+    group: root
+    mode: '0600'
+  loop:
+    - { src: "{{ openvpn_ca_dir }}/pki/dh.pem", dest: "/etc/openvpn/server/dh.pem" }
+    - { src: "{{ openvpn_ca_dir }}/pki/ca.crt", dest: "/etc/openvpn/server/ca.crt" }
+    - { src: "{{ openvpn_ca_dir }}/pki/ta.key", dest: "/etc/openvpn/server/ta.key" }
+    - { src: "{{ openvpn_ca_dir }}/pki/issued/server.crt", dest: "/etc/openvpn/server/server.crt" }
+    - { src: "{{ openvpn_ca_dir }}/pki/private/server.key", dest: "/etc/openvpn/server/server.key" }
+  when: ansible_os_family in ['RedHat', 'Fedora', 'Rocky']
+
+- name: Copy OpenVPN server configuration on Debian-based systems
+  template:
+    src: server.conf.j2
+    dest: /etc/openvpn/server.conf
+    mode: '0644'
+  when: ansible_os_family in ['Debian']
+
+- name: Copy OpenVPN server configuration on RedHat-based systems
+  template:
+    src: server.conf.j2
+    dest: /etc/openvpn/server/server.conf
+    mode: '0644'
+  when: ansible_os_family in ['RedHat', 'Fedora', 'Rocky']
+
+- name: Enable IP forwarding
+  sysctl:
+    name: net.ipv4.ip_forward
+    value: '1'
+    state: present
+
+- name: Save IP forwarding setting
+  lineinfile:
+    path: /etc/sysctl.conf
+    regexp: '^#?net.ipv4.ip_forward'
+    line: 'net.ipv4.ip_forward=1'
+
+- name: Allow OpenVPN through UFW
+  ufw:
+    rule: allow
+    port: "1194"
+    proto: udp
+  when: ansible_os_family == 'Debian'
+
+- name: Allow OpenVPN through Firewalld
+  firewalld:
+    service: openvpn
+    permanent: true
+    immediate: yes
+    state: enabled
+  when: ansible_os_family in ['RedHat', 'Fedora', 'Rocky']
+
+- name: Allow NAT in UFW for VPN clients
+  lineinfile:
+    path: /etc/ufw/before.rules
+    insertafter: "COMMIT"
+    line: |
+      # NAT table rules
+      *nat
+      :POSTROUTING ACCEPT [0:0]
+      -A POSTROUTING -s 10.8.0.0/24 -o {{ ansible_default_ipv4.interface }} -j MASQUERADE
+      COMMIT
+    state: present
+  when: ansible_os_family == 'Debian'
+
+- name: Allow NAT in Firewalld
+  firewalld:
+    rich_rule: 'rule family="ipv4" source address="10.8.0.0/24" masquerade'
+    permanent: true
+    immediate: yes
+    state: enabled
+  when: ansible_os_family in ['RedHat', 'Fedora', 'Rocky']
+
+- name: Enable IP forwarding for UFW
+  lineinfile:
+    path: /etc/ufw/sysctl.conf
+    regexp: '^#?net/ipv4/ip_forward'
+    line: 'net/ipv4/ip_forward=1'
+    state: present
+  when: ansible_os_family == 'Debian'
+
+- name: Enable IP forwarding for Firewalld
+  sysctl:
+    name: net.ipv4.ip_forward
+    value: '1'
+    state: present
+  when: ansible_os_family in ['RedHat', 'Fedora', 'Rocky']
+
+- name: Reload UFW to apply changes
+  command: ufw reload
+  when: ansible_os_family == 'Debian'
+
+- name: Reload Firewalld to apply changes
+  firewalld:
+    state: reloaded
+  when: ansible_os_family == 'RedHat'
+
+- name: Restart OpenVPN service
+  service:
+    name: "{{ 'openvpn' if ansible_os_family == 'Debian' else 'openvpn-server@server.service' }}"
+    state: restarted

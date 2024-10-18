@@ -1,0 +1,11 @@
+---
+
+- name: Install and configure OpenVPN Server
+  hosts: openvpn
+  become: true
+  become_user: root
+  become_method: sudo
+  vars_files:
+    - vars.yaml
+  roles:
+    - openvpn_server

@@ -1,0 +1,3 @@
+---
+- name: Add OpenVPN user {{ client_name }}
+  include_tasks: user_add_task.yaml

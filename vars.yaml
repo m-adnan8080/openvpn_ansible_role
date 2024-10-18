@@ -1,0 +1,25 @@
+# Packages installation
+firewall_package_name: "{{ 'ufw' if ansible_os_family == 'Debian' else 'firewalld' }}"
+
+# OpenVPN Server Variables
+openvpn_ca_dir: "/etc/openvpn/openvpn-ca"
+openvpn_country: "US"
+openvpn_province: "California"
+openvpn_city: "San Francisco"
+openvpn_org: "Copyleft Certificate Co"
+openvpn_email: "me@example.net"
+openvpn_ou: "My Organization Unit"
+vpn_server_public_ip: "xx.xx.xx.xx"
+
+# OpenVPN Client Variables
+openvpn_add_users:
+  - client1
+  - client2
+
+openvpn_remove_users:
+  - client3
+
+client_config_dir: "/etc/openvpn/client-configs"
+
+# Default values for client creation (can be overridden)
+default_client_name: "client1"

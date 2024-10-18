@@ -1,0 +1,39 @@
+---
+- name: Check if client certificate exists for {{ client_item }}
+  stat:
+    path: "/etc/openvpn/client/{{ client_item }}.crt"
+  register: client_cert_check
+
+- name: Revoke the client certificate for {{ client_item }}
+  command: "./easyrsa revoke {{ client_item }}"
+  args:
+    chdir: "{{ openvpn_ca_dir }}"
+  environment:
+    EASYRSA_BATCH: "1"
+  when: client_cert_check.stat.exists
+
+- name: Delete client certificate for {{ client_item }}
+  file:
+    path: "/etc/openvpn/client/{{ client_item }}.crt"
+    state: absent
+  when: client_cert_check.stat.exists
+
+- name: Delete client key for {{ client_item }}
+  file:
+    path: "/etc/openvpn/client/{{ client_item }}.key"
+    state: absent
+  when: client_cert_check.stat.exists
+
+- name: Delete client OVPN configuration file for {{ client_item }} from client-configs
+  file:
+    path: "{{ client_config_dir }}/{{ client_item }}.ovpn"
+    state: absent
+  when: client_cert_check.stat.exists
+
+- name: Regenerate the certificate revocation list (CRL)
+  command: "./easyrsa gen-crl"
+  args:
+    chdir: "{{ openvpn_ca_dir }}"
+  notify:
+    - Restart OpenVPN
+  when: client_cert_check.stat.exists

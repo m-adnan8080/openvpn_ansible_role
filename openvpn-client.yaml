@@ -1,0 +1,27 @@
+---
+- hosts: openvpn
+  become: true
+  become_user: root
+  become_method: sudo
+  vars_files:
+    - vars.yaml
+  tasks:
+    - name: Add OpenVPN clients
+      include_role:
+        name: openvpn_client
+      vars:
+        client_name: "{{ item }}"
+      loop: "{{ openvpn_add_users | default([default_client_name]) }}"
+
+    - name: Download the .ovpn file for each user
+      fetch:
+        src: "{{ client_config_dir }}/{{ item }}.ovpn"
+        dest: "./client-configs/{{ item }}.ovpn"
+        flat: yes
+      loop: "{{ openvpn_add_users | default([default_client_name]) }}"
+
+  handlers:
+    - name: Restart OpenVPN
+      service:
+        name: "{{ 'openvpn' if ansible_os_family == 'Debian' else 'openvpn-server@server.service' }}"
+        state: restarted

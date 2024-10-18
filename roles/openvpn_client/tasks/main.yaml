@@ -1,0 +1,19 @@
+---
+- name: "Check for conflicting users in add and remove lists"
+  assert:
+    that:
+      - openvpn_add_users | intersect(openvpn_remove_users) | length == 0
+    fail_msg: "Users cannot be in both openvpn_add_users and openvpn_remove_users lists simultaneously."
+    success_msg: "No conflicting users found in openvpn_add_users and openvpn_remove_users."
+
+# Task block for adding users
+- block:
+    - name: "Add OpenVPN users"
+      include_tasks: user_add.yaml
+  when: openvpn_add_users | length > 0
+
+# Task block for removing users
+- block:
+    - name: "Remove OpenVPN users"
+      include_tasks: user_remove.yaml
+  when: openvpn_remove_users | length > 0

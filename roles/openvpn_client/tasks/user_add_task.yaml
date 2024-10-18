@@ -1,0 +1,68 @@
+---
+- name: Check if client certificate exists for {{ client_name }}
+  stat:
+    path: "/etc/openvpn/client/{{ client_name }}.crt"
+  register: client_cert_check
+
+- name: Generate client certificate request and sign certificate for {{ client_name }}
+  command: "./easyrsa build-client-full {{ client_name }} nopass"
+  args:
+    chdir: "{{ openvpn_ca_dir }}"
+  environment:
+    EASYRSA_BATCH: "1"
+  when: not client_cert_check.stat.exists
+
+- name: Copy client keys and certificates for {{ client_name }}
+  copy:
+    src: "{{ cert_item.src }}"
+    dest: "{{ cert_item.dest }}"
+    owner: root
+    group: root
+    mode: '0600'
+    remote_src: yes
+  loop:
+    - { src: "{{ openvpn_ca_dir }}/pki/private/{{ client_name }}.key", dest: "/etc/openvpn/client/{{ client_name }}.key" }
+    - { src: "{{ openvpn_ca_dir }}/pki/issued/{{ client_name }}.crt", dest: "/etc/openvpn/client/{{ client_name }}.crt" }
+  loop_control:
+    loop_var: cert_item
+  when: not client_cert_check.stat.exists
+
+- name: Read the CA certificate
+  slurp:
+    src: "{{ openvpn_ca_dir }}/pki/ca.crt"
+  register: ca_cert
+
+- name: Read the tls-auth key
+  slurp:
+    src: "{{ openvpn_ca_dir }}/pki/ta.key"
+  register: tls_key
+
+- name: Read the client certificate
+  slurp:
+    src: "{{ openvpn_ca_dir }}/pki/issued/{{ client_name }}.crt"
+  register: client_cert
+
+- name: Read the client key
+  slurp:
+    src: "{{ openvpn_ca_dir }}/pki/private/{{ client_name }}.key"
+  register: client_key
+
+- name: Ensure client-configs directory exists
+  file:
+    path: "{{ client_config_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Generate client OVPN configuration (if not exists)
+  template:
+    src: client.conf.j2
+    dest: "{{ client_config_dir }}/{{ client_name }}.ovpn"
+    mode: '0644'
+  vars:
+    ca_content: "{{ ca_cert.content | b64decode }}"
+    cert_content: "{{ client_cert.content | b64decode }}"
+    key_content: "{{ client_key.content | b64decode }}"
+    tls_crypt_content: "{{ tls_key.content | b64decode }}"
+  when: not client_cert_check.stat.exists
