@@ -43,43 +43,6 @@ To set up the OpenVPN server, you can use the provided playbook `openvpn-server-
 
 ```yaml
 ---
-- hosts: vpn-server
-  become: true
-  roles:
-    - openvpn
-```
-
-This playbook will install and configure the OpenVPN server on the target host.
-
-### 2. Add VPN Clients
-
-To add new VPN clients, use the `add-client-account.yaml` playbook. You need to specify a list of users in a variable file (`users.yml`), like this:
-
-```yaml
-openvpn_user_list:
-  - username1
-  - username2
-  - username3
-```
-
-Run the playbook to generate `.ovpn` configuration files for each user:
-
-```bash
-ansible-playbook add-client-account.yaml -e "@users.yml"
-```
-
-The `.ovpn` files will be stored in the directory specified by the `openvpn_client_config_path` variable.
-
-### 3. Download the Client Configuration
-
-Once the clients are created, you can download their `.ovpn` configuration files and distribute them to the users.
-
-## Example Playbooks
-
-### Example for OpenVPN Server Setup
-
-```yaml
----
 - name: Install and configure OpenVPN Server
   hosts: openvpn
   become: true
@@ -91,7 +54,15 @@ Once the clients are created, you can download their `.ovpn` configuration files
     - openvpn_server
 ```
 
-### For Clients addition and removal update the variable in `vars.yaml` file
+Run the playbook to install and configure the OpenVPN server on the target(s) host.
+
+```bash
+ansible-playbook openvpn-server.yaml
+```
+
+### 2. Add/Remove VPN Clients
+
+To add new VPN clients, use the `add-client-account.yaml` playbook. You need to specify a list of users in a variable file (`vars.yaml`), like this:
 
 ```yaml
 # OpenVPN Client Variables
@@ -102,6 +73,14 @@ openvpn_add_users:
 openvpn_remove_users:
   - client3
 ```
+
+Run the playbook to generate `.ovpn` configuration files for each user:
+
+```bash
+ansible-playbook openvpn-client.yaml
+```
+
+The `.ovpn` files will be stored in the directory specified by the `client_config_dir` variable on the server and will also be downloaded to your local machine directory `client-configs`.
 
 ## License
 
