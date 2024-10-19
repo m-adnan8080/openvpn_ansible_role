@@ -11,19 +11,7 @@
       - easy-rsa
       - "{{ firewall_package_name }}"
     state: present
-  when: ansible_os_family in ['RedHat', 'Fedora', 'Rocky']
-
-- name: Install UFW on Debian-based systems
-  apt:
-    name: ufw
-    state: present
-  when: ansible_os_family == 'Debian'
-
-- name: Install Firewalld on RedHat-based systems
-  yum:
-    name: firewalld
-    state: present
-  when: ansible_os_family in ['RedHat', 'Fedora', 'Rocky']
+  when: ansible_os_family in ['Debian', 'RedHat', 'Fedora', 'Rocky']
 
 - name: Enable and start firewall service (UFW for Debian, firewalld for RedHat)
   service:
