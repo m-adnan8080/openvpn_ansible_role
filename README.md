@@ -7,14 +7,19 @@ This Ansible role helps to automate the setup and management of an OpenVPN serve
 
 - Set up an OpenVPN server on a Linux host.
 - Manage OpenVPN clients and automatically generate `.ovpn` files for each user.
-- Tested on Debian-based systems (additional support for other distributions can be added).
+- Tested on Debian-based systems and RedHat based Linux Distributions.
 - Easily customizable using Ansible variables.
 
 ## Requirements
 
 - Ansible 2.9 or later.
 - Supported Linux distributions:
-  - Debian-based systems (additional distributions to be added soon).
+  - Debian 12
+  - Ubuntu 22.04
+  - CentOS 8
+  - Rocky 9
+  - Fedora
+  - RedHat
 
 ## Role Variables
 
@@ -75,26 +80,27 @@ Once the clients are created, you can download their `.ovpn` configuration files
 
 ```yaml
 ---
-- name: Set up OpenVPN server
-  hosts: vpn-server
-  become: yes
+- name: Install and configure OpenVPN Server
+  hosts: openvpn
+  become: true
+  become_user: root
+  become_method: sudo
+  vars_files:
+    - vars.yaml
   roles:
-    - openvpn
+    - openvpn_server
 ```
 
-### Example for Adding Clients
+### For Clients addition and removal update the variable in `vars.yaml` file
 
 ```yaml
----
-- name: Add OpenVPN clients
-  hosts: vpn-server
-  become: yes
-  roles:
-    - openvpn
-  vars:
-    openvpn_user_list:
-      - john
-      - alice
+# OpenVPN Client Variables
+openvpn_add_users:
+  - client1
+  - client2
+
+openvpn_remove_users:
+  - client3
 ```
 
 ## License
@@ -103,7 +109,7 @@ MIT License. See the [LICENSE](LICENSE) file for more details.
 
 ## Author
 
-This role is maintained by [M-Adnan8080](https://github.com/m-adnan8080).
+This role is maintained by [m-adnan8080](https://github.com/m-adnan8080).
 
 ## Contributions
 
