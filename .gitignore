@@ -1,1 +1,3 @@
 client-configs/*.ovpn
+ansible.log
+inventory
